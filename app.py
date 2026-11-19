@@ -18,6 +18,9 @@ from fastapi import FastAPI, HTTPException, Request
 
 log = logging.getLogger("gols")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+# HTTPX registra URLs completas; nunca exibir credenciais em query strings.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 API_URL = "https://live-football-api.com/api/v1"
 API_KEY = os.getenv("LFA_API_KEY", "").strip()
