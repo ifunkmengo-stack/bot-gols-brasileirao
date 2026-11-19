@@ -31,6 +31,7 @@ WEB_URL = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "
 DB_PATH = os.getenv("DB_PATH", "/tmp/gols.sqlite3")
 LEAGUE_ID = os.getenv("LFA_LEAGUE_ID", "").strip()
 REGISTERED = False
+TELEGRAM_READY = False
 
 ALIASES = {
     "Paranaense": "Athletico-PR",
@@ -305,6 +306,40 @@ async def send_pending(client: httpx.AsyncClient) -> bool:
     return True
 
 
+async def telegram_diagnostics():
+    """Verifica se o bot tem acesso ao canal sem publicar mensagens de teste."""
+    global TELEGRAM_READY
+    async with httpx.AsyncClient(timeout=12) as client:
+        while True:
+            try:
+                if TG_TOKEN and TG_CHAT:
+                    me = await client.post(
+                        f"https://api.telegram.org/bot{TG_TOKEN}/getMe")
+                    mine = me.json()
+                    if not mine.get("ok"):
+                        raise RuntimeError("Token do Telegram não aceito")
+                    bot_id = mine["result"]["id"]
+                    member = await client.post(
+                        f"https://api.telegram.org/bot{TG_TOKEN}/getChatMember",
+                        json={"chat_id": TG_CHAT, "user_id": bot_id},
+                    )
+                    status = member.json()
+                    info = status.get("result") or {}
+                    TELEGRAM_READY = bool(
+                        status.get("ok") and info.get("status") in ("administrator", "creator")
+                        and info.get("can_post_messages", True))
+                    if TELEGRAM_READY:
+                        log.info("Bot reconhecido como administrador com permissão de publicar")
+                    else:
+                        log.warning("Bot ainda não tem permissão para publicar no canal")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                TELEGRAM_READY = False
+                log.warning("Diagnóstico Telegram: %s", type(exc).__name__)
+            await asyncio.sleep(300)
+
+
 async def worker():
     async with httpx.AsyncClient() as client:
         while True:
@@ -324,8 +359,9 @@ async def lifespan(_: FastAPI):
     setup_db()
     registrar = asyncio.create_task(registration_loop())
     sender = asyncio.create_task(worker())
+    verifier = asyncio.create_task(telegram_diagnostics())
     yield
-    for task in (registrar, sender):
+    for task in (registrar, sender, verifier):
         task.cancel()
     for task in (registrar, sender):
         try:
@@ -343,6 +379,7 @@ async def health():
         sent = con.execute("SELECT count(*) FROM goals WHERE status='sent'").fetchone()[0]
         waiting = con.execute("SELECT count(*) FROM goals WHERE status='pending'").fetchone()[0]
     return {"ok": True, "configured": configured(), "webhook_registered": REGISTERED,
+            "telegram_admin": TELEGRAM_READY,
             "goals_sent": sent, "pending": waiting}
 
 
