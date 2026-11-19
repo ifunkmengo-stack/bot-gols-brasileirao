@@ -340,6 +340,34 @@ async def telegram_diagnostics():
             await asyncio.sleep(300)
 
 
+async def send_test_post_once():
+    """Postagem pontual autorizada para testar o canal; nunca aparenta ser gol real."""
+    test_id = os.getenv("TEST_POST_ID", "").strip()
+    if not test_id or not TG_TOKEN or not TG_CHAT:
+        return
+    marker = Path(DB_PATH).parent / (".test_post_" + hashlib.sha256(test_id.encode()).hexdigest()[:18])
+    if marker.exists():
+        log.info("TEST_POST_ALREADY_SENT")
+        return
+    message = (
+        "🧪 TESTE DE PUBLICAÇÃO — NÃO É GOL AO VIVO\n\n"
+        "🇧🇷 GOL DO CRUZEIRO!\n"
+        "⚽️ Khellven (GC)\n"
+        "🇧🇷 Cruzeiro 2 x 1 Palmeiras 🇧🇷\n"
+        "🏆 Brasileirão Série A\n\n"
+        "📸 Reprodução\n"
+        "🔔 Compartilhe e siga o canal!\n\n"
+        "🧪 Mensagem de teste do bot; lance ilustrativo."
+    )
+    try:
+        async with httpx.AsyncClient() as client:
+            message_id = await send_message(client, message)
+        marker.write_text(message_id, encoding="utf-8")
+        log.info("TEST_POST_SENT message_id=%s", message_id)
+    except Exception as exc:
+        log.error("TEST_POST_FAILED %s: %s", type(exc).__name__, str(exc)[:100])
+
+
 async def worker():
     async with httpx.AsyncClient() as client:
         while True:
@@ -360,8 +388,9 @@ async def lifespan(_: FastAPI):
     registrar = asyncio.create_task(registration_loop())
     sender = asyncio.create_task(worker())
     verifier = asyncio.create_task(telegram_diagnostics())
+    test_post = asyncio.create_task(send_test_post_once())
     yield
-    for task in (registrar, sender, verifier):
+    for task in (registrar, sender, verifier, test_post):
         task.cancel()
     for task in (registrar, sender):
         try:
