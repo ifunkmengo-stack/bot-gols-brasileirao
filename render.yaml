@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: gols-brasileirao-telegram
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log
+    healthCheckPath: /health
+    envVars:
+      - key: LFA_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        value: "@legendaskwkwkek"
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: DB_PATH
+        value: /tmp/gols.sqlite3
